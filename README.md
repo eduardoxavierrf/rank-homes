@@ -25,6 +25,32 @@ with exclusive maxima. Evidence includes source hashes and oriented dimensions.
 This is an application integration slice. Real inference is not yet
 integrated: production search commands fail clearly without loading weights.
 Tests supply a deterministic extractor through `main(..., extractor_factory=...)`;
-there is no synthetic command-line mode. Reference integrity hardening and real offline inference are subsequent tickets.
+there is no synthetic command-line mode. Real offline inference is a subsequent ticket.
+
+Reference builds hold an OS-managed writer lock for the complete command. Each
+build writes a new generation under `generations/`, reloads and validates its
+manifest, float32 NumPy matrix and original-size RGB PNG crops, then atomically
+replaces `CURRENT.json`. Previous generations remain available; interrupted or
+failed builds preserve the current pointer. Retry the complete build after a
+failure. The persistent `.build.lock` file is normal and must not be removed;
+the operating system releases the lock when the writer exits.
+
+Comparison validates one captured generation before candidate inference. Every
+eligible original reference file, including duplicates and photos without
+detections, must retain its relative path and bytes. Moving only the reference
+root is compatible. Inventory changes, corruption, unknown formats or extraction
+configuration changes require an explicit rebuild. Changing `--threshold` does
+not require a rebuild.
+
+Extractor adapters must supply effective configuration: `extractor_version`,
+`detector_weights`, `detector_weights_sha256`, `classes`, `detector_cutoff`,
+`geometry`, `embedding_weights`, `embedding_weights_sha256`, `embedding_revision`,
+`processor`, `pooling`, `dimension`, `normalization` (`L2`) and `dtype` (`float32`).
+Weight hashes identify actual artifact bytes; the processor records the effective
+resize, interpolation, rescale and normalization settings. The canonical JSON
+SHA-256 fingerprint includes these settings and exact installed RF-DETR, Torch,
+Torchvision, Transformers, Pillow and NumPy versions, without importing models.
+Missing distributions are recorded explicitly for model-free adapters. Listing
+threshold, presentation, device and hardware are excluded from extraction identity.
 
 Run checks with `uv run pyright` and `uv run python -m unittest discover -s tests`.

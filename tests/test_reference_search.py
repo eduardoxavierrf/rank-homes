@@ -16,7 +16,16 @@ from rank_homes.domain import Analysis, Region
 
 class FixtureExtractor:
     dimension = 2
-    configuration = {"extractor": "test-fixture-v1", "dimension": 2, "dtype": "float32"}
+    configuration = {
+        "extractor_version": "test-fixture-v1", "dimension": 2, "dtype": "float32",
+        "detector_weights": "fixture-detector", "detector_weights_sha256": "a" * 64,
+        "classes": {0: "sink"}, "detector_cutoff": 0.5,
+        "geometry": "exif-rgb-clamp-floor-ceil-exclusive-v1",
+        "embedding_weights": "fixture-embedding", "embedding_weights_sha256": "b" * 64,
+        "embedding_revision": "fixture-v1", "processor": {"resize": [224, 224], "interpolation": "bilinear",
+            "rescale_factor": 1 / 255, "mean": [0.5] * 3, "std": [0.5] * 3, "center_crop": False},
+        "pooling": "CLS", "normalization": "L2",
+    }
 
     def analyze(self, photo, image):
         # A known cosine of approximately 0.8 against the reference axis.

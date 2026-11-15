@@ -1,12 +1,13 @@
 """Read source identities without importing inference libraries."""
 from hashlib import sha256
 from pathlib import Path
+from typing import BinaryIO
 import warnings
 from PIL import Image, ImageOps
 from .domain import Photo
 
 
-def read_image(path: Path) -> Image.Image:
+def read_image(path: Path | BinaryIO) -> Image.Image:
     with Image.open(path) as image:
         return ImageOps.exif_transpose(image).convert("RGB")
 

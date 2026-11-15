@@ -1,11 +1,14 @@
 """Coordinate source reading, extraction, persistence and pure ranking."""
 from pathlib import Path
+from hashlib import sha256
+from io import BytesIO
 import warnings
 import numpy as np
 from .catalog import load_catalog, read_image, representative_photos
 from .domain import Analysis, Photo
 from .ranking import rank_listing
-from .references import load_reference_library, save_reference_library
+from .references import ReferenceWriter, load_reference_library
+from .extraction_configuration import extraction_configuration
 from .vision import VisualExtractor, validate_analysis
 
 
@@ -23,15 +26,33 @@ def analyze_photo(photo: Photo, image, extractor: VisualExtractor) -> Analysis:
 
 
 def build_references(images: Path, output: Path, extractor: VisualExtractor) -> str:
-    photos = load_catalog(images, "reference")
-    analyses, crops = [], []
-    for photo in representative_photos(photos):
-        with read_image(images / photo.relative_path) as image:
-            analysis = analyze_photo(photo, image, extractor)
-            analyses.append(analysis)
-            crops.extend(image.crop(region.box) for region in analysis.regions)
-    return save_reference_library(output, combine(analyses, extractor.dimension), photos,
-                                  extractor.configuration, crops, extractor.dimension)
+    with ReferenceWriter(output) as writer:
+        configuration = extraction_configuration(extractor.configuration, extractor.dimension)
+        photos = load_catalog(images, "reference")
+        analyses, crops = [], []
+        try:
+            for photo in representative_photos(photos):
+                source = images / photo.relative_path
+                content = source.read_bytes()
+                if sha256(content).hexdigest() != photo.sha256:
+                    raise ValueError(f"Reference source changed before extraction: {source}; repeat the complete build")
+                with read_image(BytesIO(content)) as image:
+                    if image.size != (photo.width, photo.height):
+                        raise ValueError(f"Reference dimensions changed before extraction: {source}")
+                    analysis = analyze_photo(photo, image, extractor)
+                    analyses.append(analysis)
+                    crops.extend(image.crop(region.box) for region in analysis.regions)
+            # The initial discovery already reported layout warnings.
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="reference:.*: photo outside apartment/room layout")
+                current_photos = load_catalog(images, "reference")
+            if photos != current_photos:
+                raise ValueError("Reference source inventory changed during build; repeat the complete build")
+            return writer.publish(combine(analyses, extractor.dimension), photos,
+                                  configuration, crops, extractor.dimension)
+        finally:
+            for crop in crops:
+                crop.close()
 
 
 def compare_listings(references: Path, reference_images: Path, listings: Path, extractor: VisualExtractor):

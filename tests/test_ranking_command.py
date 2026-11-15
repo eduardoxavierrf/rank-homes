@@ -12,7 +12,8 @@ from rank_homes.domain import Analysis, Region
 
 class EvidenceExtractor:
     dimension = 2
-    configuration = {"fixture": "ranking-evidence", "dimension": 2}
+    configuration = {**search.FixtureExtractor.configuration,
+                     "extractor_version": "ranking-evidence-v1", "classes": {0: "sink", 1: "cabinet"}}
 
     def __init__(self):
         self.candidate_photos = []

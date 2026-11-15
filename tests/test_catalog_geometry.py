@@ -22,7 +22,7 @@ class CatalogGeometryTests(unittest.TestCase):
         detections = detections if detections is not None else [Detection(0, 0.5, (-0.2, 1.2, 12.2, 7.1))]
         return lambda: GeometryExtractor(lambda image: detections,
             lambda crop: np.array([1, 0], dtype=np.float32),
-            classes={0: "sink"}, dimension=2, configuration={"fixture": "geometry"}, cutoff=cutoff)
+            classes={0: "sink"}, dimension=2, configuration=search.FixtureExtractor.configuration, cutoff=cutoff)
 
     def manifest(self):
         pointer = json.loads((self.library / "CURRENT.json").read_text())
@@ -126,7 +126,7 @@ class CatalogGeometryTests(unittest.TestCase):
         factory = lambda: GeometryExtractor(
             lambda image: [] if image.width == 3 else [Detection(0, 0.5, (0, 0, 1, 1))],
             lambda crop: np.array([1, 0], dtype=np.float32),
-            classes={0: "sink"}, dimension=2, configuration={})
+            classes={0: "sink"}, dimension=2, configuration=search.FixtureExtractor.configuration)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             self.assertEqual(self.build(factory)[0], 0)
@@ -145,7 +145,7 @@ class CatalogGeometryTests(unittest.TestCase):
         factory = lambda: GeometryExtractor(
             lambda image: [] if image.getpixel((0, 0)) == (0, 0, 0) else [Detection(0, 0.5, (0, 0, 1, 1))],
             lambda crop: np.array([1, 0], dtype=np.float32),
-            classes={0: "sink"}, dimension=2, configuration={})
+            classes={0: "sink"}, dimension=2, configuration=search.FixtureExtractor.configuration)
         self.assertEqual(self.build(factory)[0], 0)
         folder = self.listings / "added/bathroom"
         folder.mkdir(parents=True)
