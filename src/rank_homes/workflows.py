@@ -47,7 +47,7 @@ def compare_listings(references: Path, reference_images: Path, listings: Path, e
             try:
                 image = read_image(listings / photo.relative_path)
             except (OSError, ValueError) as error:
-                warnings.warn(f"{photo.photo_id}: unreadable photo: {error}", stacklevel=2)
+                warnings.warn(f"{photo.photo_id}: unreadable photo: {error}; partial coverage (photo ignored)", stacklevel=2)
                 continue
             with image:
                 analyses.append(analyze_photo(photo, image, extractor))

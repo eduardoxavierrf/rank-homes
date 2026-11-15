@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 from .vision import VisualExtractor, create_extractor
 from .workflows import build_references, compare_listings
+from .ranking import matching_photo, select_listings
 
 
 def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], VisualExtractor] = create_extractor) -> int:
@@ -30,7 +31,7 @@ def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], V
             print(f"Published reference library: {args.output} (generation {generation})")
             return 0
         results = compare_listings(args.references, args.references_images, args.listings, extractor)
-        selected = [result for result in results if result.score > args.threshold]
+        selected = select_listings(results, args.threshold)
         for result in selected:
             print(f"Listing: {result.apartment} ({args.listings / result.apartment})")
             print(f"Score: {result.score:.4f}; Threshold: {args.threshold:.4f}")
@@ -47,11 +48,12 @@ def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], V
                             print(f"  {label} source: SHA-256 {region.photo.sha256}; oriented size {region.photo.width}x{region.photo.height}")
                     else:
                         print("  Warning: missing comparable evidence")
-                pairs = [m for m in matches if m.candidate is not None]
-                if pairs:
-                    winner = max(pairs, key=lambda m: m.score)
+                winner = matching_photo(result, room)
+                if winner is not None:
                     assert winner.candidate is not None
                     print(f"Matching photo: {args.listings / winner.candidate.photo.relative_path} (one object match)")
+                else:
+                    print("Matching photo: none (no comparable evidence)")
         skipped = sum(path.is_dir() for path in args.listings.iterdir()) - len(results)
         print(f"Evaluated: {len(results)}; Selected: {len(selected)}; Below threshold: {len(results) - len(selected)}; Skipped: {skipped}")
         return 0

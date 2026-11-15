@@ -32,7 +32,7 @@ def load_catalog(root: Path, side: str) -> tuple[Photo, ...]:
             message = f"{side}:{relative}: unreadable photo: {error}"
             if side == "reference":
                 raise ValueError(message) from error
-            warnings.warn(message, stacklevel=2)
+            warnings.warn(f"{message}; partial coverage (photo ignored)", stacklevel=2)
             continue
         photos.append(Photo(f"{side}:{relative}", side, parts[0], parts[1],
                             relative, digest, width, height))

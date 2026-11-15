@@ -26,8 +26,10 @@ def validate_analysis(analysis: Analysis, dimension: int) -> None:
     if vectors.dtype != np.float32 or vectors.shape != (len(analysis.regions), dimension):
         raise ValueError("Invalid embedding dtype, dimension or region alignment")
     norms = np.linalg.norm(vectors.astype(np.float64), axis=1)
-    if not np.isfinite(vectors).all() or not np.all(np.abs(norms - 1) <= 1e-5):
-        raise ValueError("Invalid embedding: expected finite unit vectors")
+    for region, vector, norm in zip(analysis.regions, vectors, norms):
+        if not np.isfinite(vector).all() or not math.isfinite(float(norm)) or abs(norm - 1) > 1e-5:
+            raise ValueError(f"Invalid embedding: expected finite unit vectors: {region.region_id} "
+                             f"({region.photo.relative_path}, box {region.box})")
     if len({region.region_id for region in analysis.regions}) != len(analysis.regions):
         raise ValueError("Duplicate region identities")
 
