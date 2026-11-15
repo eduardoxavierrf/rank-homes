@@ -43,6 +43,8 @@ def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], V
                     if match.candidate is not None and match.reference is not None:
                         print(f"  Candidate: {args.listings / match.candidate.photo.relative_path}; box {match.candidate.box}")
                         print(f"  Reference: {args.references_images / match.reference.photo.relative_path}; box {match.reference.box}")
+                        for label, region in (("Candidate", match.candidate), ("Reference", match.reference)):
+                            print(f"  {label} source: SHA-256 {region.photo.sha256}; oriented size {region.photo.width}x{region.photo.height}")
                     else:
                         print("  Warning: missing comparable evidence")
                 pairs = [m for m in matches if m.candidate is not None]
@@ -50,7 +52,8 @@ def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], V
                     winner = max(pairs, key=lambda m: m.score)
                     assert winner.candidate is not None
                     print(f"Matching photo: {args.listings / winner.candidate.photo.relative_path} (one object match)")
-        print(f"Evaluated: {len(results)}; Selected: {len(selected)}; Below threshold: {len(results) - len(selected)}; Skipped: 0")
+        skipped = sum(path.is_dir() for path in args.listings.iterdir()) - len(results)
+        print(f"Evaluated: {len(results)}; Selected: {len(selected)}; Below threshold: {len(results) - len(selected)}; Skipped: {skipped}")
         return 0
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"Error during {args.command}: {error}", file=sys.stderr)
