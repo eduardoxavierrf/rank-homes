@@ -1,0 +1,28 @@
+# Local datasets and training artifacts
+/data/
+/artifacts/
+*.ckpt
+*.pth
+*.pt
+*.log
+
+# Python environments, caches, and bytecode
+/.venv/
+/.cache/
+/.uv-cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Local configuration
+/.env
+/.env.*
+!/.env.example
+
+# skills
+/docs/
+/.scratch/
+
+# Private local validation evidence
+/evidence/
