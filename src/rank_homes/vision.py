@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 import numpy as np
 from PIL import Image
 from .domain import Analysis, Photo, Region
+from .diagnostics import DiagnosticWarning
 
 
 class Extractor(Protocol):
@@ -75,7 +76,7 @@ class GeometryExtractor:
             if detection.class_id not in self.classes:
                 raise ValueError(f"{photo.photo_id}: incompatible detector class {detection.class_id}")
             if not math.isfinite(detection.confidence):
-                warnings.warn(f"{photo.photo_id}: detection {index}: non-finite confidence", stacklevel=2)
+                warnings.warn(DiagnosticWarning(f"{photo.photo_id}: detection {index}: discarded box: non-finite confidence", "discarded boxes"), stacklevel=2)
                 continue
             if detection.confidence < self.cutoff:
                 continue
@@ -94,10 +95,14 @@ class GeometryExtractor:
                 if box[0] >= box[2] or box[1] >= box[3]:
                     reason = "empty box after clamping"
             if reason is not None:
-                warnings.warn(f"{photo.photo_id}: detection {index}: {reason}", stacklevel=2)
+                warnings.warn(DiagnosticWarning(f"{photo.photo_id}: detection {index}: discarded box: {reason}", "discarded boxes"), stacklevel=2)
                 continue
             with image.crop(box) as crop:
-                vectors.append(self.embedder(crop))
+                try:
+                    vectors.append(self.embedder(crop))
+                except Exception as error:
+                    raise RuntimeError(f"Embedding failed: {photo.photo_id}: detection {index}, "
+                                       f"box {box}: {type(error).__name__}: {error}") from error
             regions.append(Region(f"{photo.photo_id}:{index}", photo,
                                   self.classes[detection.class_id], detection.confidence, box))
         analysis = Analysis(tuple(regions), np.asarray(vectors, dtype=np.float32) if vectors

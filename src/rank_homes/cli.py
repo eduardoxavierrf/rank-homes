@@ -3,9 +3,30 @@ import argparse
 from collections.abc import Callable, Sequence
 from pathlib import Path
 import sys
+import warnings
+from collections import Counter
+from contextlib import contextmanager
 from .vision import Extractor, create_extractor
 from .workflows import build_references, compare_listings
 from .ranking import matching_photo, select_listings
+from .diagnostics import DiagnosticWarning
+
+
+@contextmanager
+def warning_counts():
+    """Count diagnostics while streaming them, without retaining warning objects."""
+    counts: Counter[str] = Counter()
+    with warnings.catch_warnings():
+        warnings.simplefilter("always", UserWarning)
+        original = warnings.showwarning
+
+        def showwarning(message, category, filename, lineno, file=None, line=None):
+            if isinstance(message, DiagnosticWarning):
+                counts[message.category] += 1
+            original(message, category, filename, lineno, file, line)
+
+        warnings.showwarning = showwarning
+        yield counts
 
 
 def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], Extractor] | None = None) -> int:
@@ -40,10 +61,14 @@ def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], E
             print(f"Inference: device={extractor.configuration['device']}; float32; batch=1; "
                   f"fingerprint={fingerprint(extraction_configuration(extractor.configuration, extractor.dimension))}", file=sys.stderr)
         if args.command == "references":
-            generation = build_references(args.images, args.output, extractor)
+            with warning_counts() as counts:
+                generation = build_references(args.images, args.output, extractor)
             print(f"Published reference library: {args.output} (generation {generation})")
+            if counts:
+                print("Warnings: " + "; ".join(f"{label}={count}" for label, count in sorted(counts.items())))
             return 0
-        results = compare_listings(args.references, args.references_images, args.listings, extractor)
+        with warning_counts() as counts:
+            results = compare_listings(args.references, args.references_images, args.listings, extractor, progress=print)
         selected = select_listings(results, args.threshold)
         for result in selected:
             print(f"Listing: {result.apartment} ({args.listings / result.apartment})")
@@ -69,7 +94,12 @@ def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], E
                     print("Matching photo: none (no comparable evidence)")
         skipped = sum(path.is_dir() for path in args.listings.iterdir()) - len(results)
         print(f"Evaluated: {len(results)}; Selected: {len(selected)}; Below threshold: {len(results) - len(selected)}; Skipped: {skipped}")
+        if counts:
+            print("Warnings: " + "; ".join(f"{label}={count}" for label, count in sorted(counts.items())))
         return 0
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ImportError) as error:
+    except KeyboardInterrupt:
+        print(f"Error during {args.command}: interrupted; restart the complete command", file=sys.stderr)
+        return 130
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ImportError, MemoryError) as error:
         print(f"Error during {args.command}: {error}", file=sys.stderr)
         return 1

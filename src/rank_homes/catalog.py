@@ -5,6 +5,7 @@ from typing import BinaryIO
 import warnings
 from PIL import Image, ImageOps
 from .domain import Photo
+from .diagnostics import DiagnosticWarning
 
 
 def read_image(path: Path | BinaryIO) -> Image.Image:
@@ -23,7 +24,7 @@ def load_catalog(root: Path, side: str) -> tuple[Photo, ...]:
         relative = path.relative_to(root).as_posix()
         parts = path.relative_to(root).parts
         if len(parts) != 3 or parts[1] not in {"kitchen", "bathroom"}:
-            warnings.warn(f"{side}:{relative}: photo outside apartment/room layout", stacklevel=2)
+            warnings.warn(DiagnosticWarning(f"{side}:{relative}: photo outside apartment/room layout", "ignored layout"), stacklevel=2)
             continue
         try:
             digest = sha256(path.read_bytes()).hexdigest()
@@ -33,7 +34,7 @@ def load_catalog(root: Path, side: str) -> tuple[Photo, ...]:
             message = f"{side}:{relative}: unreadable photo: {error}"
             if side == "reference":
                 raise ValueError(message) from error
-            warnings.warn(f"{message}; partial coverage (photo ignored)", stacklevel=2)
+            warnings.warn(DiagnosticWarning(f"{message}; partial coverage (photo ignored)", "unreadable inputs"), stacklevel=2)
             continue
         photos.append(Photo(f"{side}:{relative}", side, parts[0], parts[1],
                             relative, digest, width, height))
@@ -45,7 +46,7 @@ def representative_photos(photos: tuple[Photo, ...]) -> tuple[Photo, ...]:
     for photo in sorted(photos, key=lambda p: p.relative_path):
         key = (photo.side, photo.apartment, photo.room, photo.sha256)
         if key in groups:
-            warnings.warn(f"{photo.photo_id}: duplicate of {groups[key].relative_path}", stacklevel=2)
+            warnings.warn(DiagnosticWarning(f"{photo.photo_id}: duplicate of {groups[key].relative_path}", "ignored duplicate photos"), stacklevel=2)
         else:
             groups[key] = photo
     return tuple(groups.values())

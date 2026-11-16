@@ -2,6 +2,7 @@
 import math
 import unittest
 import warnings
+import weakref
 
 import numpy as np
 from PIL import Image
@@ -33,6 +34,102 @@ class RankingCommandTests(unittest.TestCase):
     command = search.ReferenceSearchTests.command
     build = search.ReferenceSearchTests.build
     compare = search.ReferenceSearchTests.compare
+
+    def test_changed_candidate_bytes_are_fatal_even_when_no_longer_decodable(self):
+        self.photo(self.listings, "A-first/kitchen/photo.png", (80, 20, 40))
+        changed = self.listings / "rental-001/kitchen/photo.png"
+
+        class Mutating(EvidenceExtractor):
+            def analyze(self, photo, image):
+                if photo.side == "candidate" and photo.apartment == "A-first":
+                    changed.write_bytes(b"changed and corrupt")
+                return super().analyze(photo, image)
+
+        self.assertEqual(self.build(Mutating)[0], 0)
+        status, output, errors = self.compare(factory=Mutating)
+        self.assertEqual(status, 1)
+        self.assertIn("Candidate source changed", errors)
+        self.assertNotIn("Evaluated:", output)
+        self.assertNotIn("Listing:", output)
+
+    def test_warning_categories_are_independent_of_user_paths(self):
+        broken = self.listings / "duplicate of rental/kitchen/broken.png"
+        broken.parent.mkdir(parents=True)
+        broken.write_bytes(b"broken")
+        self.assertEqual(self.build(EvidenceExtractor)[0], 0)
+        status, output, errors = self.compare(factory=EvidenceExtractor)
+        self.assertEqual(status, 0, errors)
+        self.assertIn("unreadable inputs=1", output)
+        self.assertNotIn("ignored duplicate photos=", output)
+
+    def test_candidate_arrays_and_pixels_are_released_between_listings(self):
+        self.photo(self.listings, "second/kitchen/photo.png", (80, 40, 20))
+        test = self
+
+        class Lifetime(EvidenceExtractor):
+            previous = None
+            previous_image = None
+
+            def analyze(self, photo, image):
+                if photo.side == "candidate" and self.previous is not None:
+                    test.assertIsNone(self.previous())
+                    test.assertIsNone(self.previous_image())
+                result = super().analyze(photo, image)
+                if photo.side == "candidate":
+                    self.previous = weakref.ref(result.vectors)
+                    self.previous_image = weakref.ref(image)
+                return result
+
+        self.assertEqual(self.build(Lifetime)[0], 0)
+        before = {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+        self.assertEqual(self.compare(factory=Lifetime)[0], 0)
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
+
+    def test_reference_failures_preserve_generation_and_allow_whole_restart(self):
+        self.assertEqual(self.build(EvidenceExtractor)[0], 0)
+        before = {p: p.read_bytes() for p in self.library.rglob("*") if p.is_file()}
+        for failure in (MemoryError("injected OOM"), RuntimeError("model failed"), KeyboardInterrupt()):
+            class Failed(EvidenceExtractor):
+                def analyze(self, photo, image):
+                    raise failure
+            status, output, errors = self.build(Failed)
+            self.assertEqual(status, 1)
+            self.assertIn("reference:desired/kitchen/photo.png", errors)
+            self.assertNotIn("Published", output)
+            self.assertTrue(all(p.read_bytes() == data for p, data in before.items()))
+        self.assertEqual(self.build(EvidenceExtractor)[0], 0)
+
+    def test_zero_evidence_and_all_skipped_summaries(self):
+        self.assertEqual(self.build(EvidenceExtractor)[0], 0)
+
+        class Empty(EvidenceExtractor):
+            def analyze(self, photo, image):
+                return Analysis((), np.empty((0, 2), dtype=np.float32))
+
+        status, output, errors = self.compare(factory=Empty)
+        self.assertEqual(status, 0, errors)
+        self.assertIn("Evaluated: 1; Selected: 0; Below threshold: 1; Skipped: 0", output)
+        self.assertIn("no detections=1", output)
+        self.assertIn("missing comparable coverage=1", output)
+        (self.listings / "rental-001/kitchen/photo.png").write_bytes(b"broken")
+        status, output, errors = self.compare(factory=Empty)
+        self.assertEqual(status, 0, errors)
+        self.assertIn("Evaluated: 0; Selected: 0; Below threshold: 0; Skipped: 1", output)
+        self.assertIn("unreadable inputs=1", output)
+
+    def test_fatal_failures_and_interruptions_have_no_completed_ranking(self):
+        self.assertEqual(self.build(EvidenceExtractor)[0], 0)
+        for failure in (MemoryError("injected OOM"), RuntimeError("model failed"), KeyboardInterrupt()):
+            class Failed(EvidenceExtractor):
+                def analyze(self, photo, image):
+                    raise failure
+            with self.subTest(failure=type(failure).__name__):
+                status, output, errors = self.compare(factory=Failed)
+                self.assertIn(status, (1, 130))
+                self.assertIn("candidate:rental-001/kitchen/photo.png", errors)
+                self.assertNotIn("Evaluated:", output)
+                self.assertNotIn("Listing:", output)
+        self.assertEqual(self.compare(factory=EvidenceExtractor)[0], 0)
 
     def photo(self, root, relative, color):
         path = root / relative

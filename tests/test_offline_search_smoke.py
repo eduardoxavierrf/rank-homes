@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
+from PIL import Image
 
 from rank_homes.catalog import load_catalog, read_image
 from rank_homes.cli import main
@@ -79,6 +80,27 @@ class OfflineSearchSmokeTests(unittest.TestCase):
                         for value in ("Room kitchen:", "Room bathroom:", "Candidate:", "Reference:", "oriented size", "box ("):
                             self.assertIn(value, output)
                 self.assertEqual(published, {str(p): p.read_bytes() for p in library.rglob("*") if p.is_file()})
+                mixed = Path(temporary) / "mixed-candidates"
+                shutil.copytree(listings, mixed)
+                broken = mixed / "unreadable/kitchen/broken.png"
+                broken.parent.mkdir(parents=True)
+                broken.write_bytes(b"invalid image")
+                empty = mixed / "no-evidence/kitchen/blank.png"
+                empty.parent.mkdir(parents=True)
+                Image.new("RGB", (512, 512), "white").save(empty)
+                (mixed / "ignored.png").write_bytes(b"outside layout")
+                mixed_before = {p: p.read_bytes() for p in mixed.rglob("*") if p.is_file()}
+                output, errors = StringIO(), StringIO()
+                with redirect_stdout(output), redirect_stderr(errors):
+                    status = main(["compare", "--references", str(library),
+                                   "--references-images", str(references), "--listings", str(mixed)],
+                                  extractor_factory=lambda: extractor)
+                self.assertEqual(status, 0, errors.getvalue())
+                self.assertIn("unreadable inputs=1", output.getvalue())
+                self.assertIn("ignored layout=1", output.getvalue())
+                self.assertIn("Skipped: 1", output.getvalue())
+                self.assertEqual(mixed_before, {p: p.read_bytes() for p in mixed.rglob("*") if p.is_file()})
+                print("Mixed-quality catalog diagnostics\n" + errors.getvalue() + output.getvalue())
                 moved = Path(temporary) / "moved-references"
                 shutil.copytree(references, moved)
                 source = next(p for p in moved.rglob("*") if p.is_file())
