@@ -114,12 +114,13 @@ class ReferenceSearchTests(unittest.TestCase):
         self.assertIn("Score: 0.8000; Threshold: 0.8000", output)
         self.assertIn("Selected: 1", output)
 
-    def test_production_invocation_fails_clearly_without_real_extractor(self):
+    def test_production_invocation_fails_clearly_without_local_detector(self):
         output, errors = StringIO(), StringIO()
         with redirect_stdout(output), redirect_stderr(errors):
-            status = main(["references", "build", "--images", str(self.references), "--output", str(self.library)])
+            status = main(["references", "build", "--images", str(self.references), "--output", str(self.library),
+                           "--detector", str(self.root / "missing.pth")])
         self.assertEqual(status, 1)
-        self.assertIn("Real visual extraction is not integrated", errors.getvalue())
+        self.assertIn("Local detector checkpoint", errors.getvalue())
         self.assertFalse(self.library.exists())
 
     def test_import_help_and_catalog_do_not_import_models(self):

@@ -9,7 +9,7 @@ from .domain import Analysis, Photo
 from .ranking import rank_listing
 from .references import ReferenceWriter, load_reference_library
 from .extraction_configuration import extraction_configuration
-from .vision import VisualExtractor, validate_analysis
+from .vision import Extractor, validate_analysis
 
 
 def combine(analyses: list[Analysis], dimension: int) -> Analysis:
@@ -17,7 +17,7 @@ def combine(analyses: list[Analysis], dimension: int) -> Analysis:
                     np.concatenate([a.vectors for a in analyses]) if analyses else np.empty((0, dimension), dtype=np.float32))
 
 
-def analyze_photo(photo: Photo, image, extractor: VisualExtractor) -> Analysis:
+def analyze_photo(photo: Photo, image, extractor: Extractor) -> Analysis:
     analysis = extractor.analyze(photo, image)
     validate_analysis(analysis, extractor.dimension)
     if not analysis.regions:
@@ -25,7 +25,7 @@ def analyze_photo(photo: Photo, image, extractor: VisualExtractor) -> Analysis:
     return analysis
 
 
-def build_references(images: Path, output: Path, extractor: VisualExtractor) -> str:
+def build_references(images: Path, output: Path, extractor: Extractor) -> str:
     with ReferenceWriter(output) as writer:
         configuration = extraction_configuration(extractor.configuration, extractor.dimension)
         photos = load_catalog(images, "reference")
@@ -55,7 +55,7 @@ def build_references(images: Path, output: Path, extractor: VisualExtractor) -> 
                 crop.close()
 
 
-def compare_listings(references: Path, reference_images: Path, listings: Path, extractor: VisualExtractor):
+def compare_listings(references: Path, reference_images: Path, listings: Path, extractor: Extractor):
     library = load_reference_library(references, load_catalog(reference_images, "reference"),
                                      extractor.configuration, extractor.dimension)
     photos = representative_photos(load_catalog(listings, "candidate"))

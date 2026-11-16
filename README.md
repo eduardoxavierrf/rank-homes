@@ -22,10 +22,28 @@ warn and apartments without usable photos are skipped. Geometry uses oriented RG
 images, a shared detector cutoff (default 0.5), and clamped integer rectangles
 with exclusive maxima. Evidence includes source hashes and oriented dimensions.
 
-This is an application integration slice. Real inference is not yet
-integrated: production search commands fail clearly without loading weights.
-Tests supply a deterministic extractor through `main(..., extractor_factory=...)`;
-there is no synthetic command-line mode. Real offline inference is a subsequent ticket.
+Search runs entirely from staged local artifacts. Defaults are
+`artifacts/runs/rooms-expanded-small/checkpoint_best_total.pth` and
+`artifacts/weights/dinov3-vits16-lvd`, relative to the working directory.
+Both commands accept `--detector <checkpoint>`, `--embedding-model <directory>`,
+`--detector-confidence 0.5` and `--device cpu|cuda`. Without a device override,
+CUDA is selected when available, otherwise CPU. Each command loads each model
+once, uses float32, evaluation/inference mode and batch size one, and stops on
+model failure without changing device or precision. Import and help load no models.
+
+The detector must be the canonical 512-pixel RF-DETR Small with the full ordered
+23-class mapping, including distinct shower, shower stall and shower door labels.
+Legacy Nano checkpoints and incomplete/incompatible weights are rejected. DINOv3
+must be the approved pinned ViT-S/16 LVD snapshot with its validated artifact
+manifest; see [staging instructions](evidence/offline-dinov3/README.md).
+Search never acquires weights or imports preparation/training scripts. It keeps
+candidate detections, crops and vectors in memory only. Device and extraction
+fingerprint are printed to stderr; the reference manifest records effective
+model/processor settings, artifact hashes and installed dependency versions.
+
+The [real offline search evidence](evidence/offline-search/README.md) covers both
+rooms, command reuse and rejection of stale references. Detection quality remains
+a limitation; successful execution does not establish retrieval accuracy.
 
 Reference builds hold an OS-managed writer lock for the complete command. Each
 build writes a new generation under `generations/`, reloads and validates its
@@ -54,3 +72,7 @@ Missing distributions are recorded explicitly for model-free adapters. Listing
 threshold, presentation, device and hardware are excluded from extraction identity.
 
 Run checks with `uv run pyright` and `uv run python -m unittest discover -s tests`.
+The real search smoke is opt-in: set `RANK_HOMES_REAL_SMOKE=1` and run
+`uv run python -m unittest discover -s tests -p test_offline_search_smoke.py`.
+It requires the default local artifacts and real `data/references` and
+`data/candidates` catalogs, blocks socket connections, and uses a temporary library.

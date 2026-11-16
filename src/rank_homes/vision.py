@@ -1,24 +1,33 @@
-"""Composition boundary for local inference; real model integration is pending."""
-from typing import Protocol
+"""Local model composition and the shared detection/crop geometry contract."""
+from typing import Protocol, Any, cast
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 import math
 import warnings
+from pathlib import Path
+from hashlib import file_digest
+import os
+import pickle
 from numpy.typing import NDArray
 import numpy as np
 from PIL import Image
 from .domain import Analysis, Photo, Region
 
 
-class VisualExtractor(Protocol):
+class Extractor(Protocol):
     dimension: int
     configuration: dict[str, object]
 
     def analyze(self, photo: Photo, image: Image.Image) -> Analysis: ...
 
 
-def create_extractor() -> VisualExtractor:
-    raise ValueError("Real visual extraction is not integrated yet. A usable local extractor is required; no model weights were loaded.")
+def create_extractor(*, detector_path: Path | None = None, embedding_path: Path | None = None,
+                     cutoff: float = 0.5, device: str | None = None) -> Extractor:
+    detector_path = Path(detector_path or "artifacts/runs/rooms-expanded-small/checkpoint_best_total.pth").resolve()
+    if not detector_path.is_file():
+        raise ValueError(f"Local detector checkpoint is missing: {detector_path}; stage the 23-class Small checkpoint first")
+    return VisualExtractor(detector_path, Path(embedding_path or "artifacts/weights/dinov3-vits16-lvd"),
+                           cutoff=cutoff, device=device)
 
 
 def validate_analysis(analysis: Analysis, dimension: int) -> None:
@@ -95,3 +104,67 @@ class GeometryExtractor:
                             else np.empty((0, self.dimension), dtype=np.float32))
         validate_analysis(analysis, self.dimension)
         return analysis
+
+
+CLASSES = ("bathtub", "cabinet", "chair", "coffee maker", "countertop", "dishwasher",
+           "faucet", "floor", "microwave", "mirror", "oven", "range hood", "refrigerator",
+           "shelf", "shower", "shower door", "shower stall", "sink", "stove", "table",
+           "toilet", "wall", "window")
+
+
+class VisualExtractor(GeometryExtractor):
+    """Own one local Small detector and DINOv3 embedder for a complete command."""
+
+    def __init__(self, detector_path: Path, embedding_path: Path, *, cutoff: float = 0.5,
+                 device: str | None = None):
+        if not math.isfinite(cutoff) or not 0 <= cutoff <= 1:
+            raise ValueError("Detector cutoff must be finite and between zero and one")
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        import torch
+        from rfdetr.detr import RFDETR
+        from .embeddings import DinoV3Embedder
+
+        self.device = str(torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu")))
+        # Validate metadata before constructing any model. Never infer labels from
+        # an external training script or silently reinterpret a legacy checkpoint.
+        try:
+            checkpoint = torch.load(detector_path, map_location="cpu", weights_only=True)
+        except (pickle.UnpicklingError, EOFError, RuntimeError) as error:
+            raise ValueError(f"Invalid local detector checkpoint: {detector_path}: {error}") from error
+        if (not isinstance(checkpoint, dict) or not isinstance(checkpoint.get("model_config"), dict)
+                or not isinstance(checkpoint.get("args"), dict)):
+            raise ValueError("Invalid local detector checkpoint metadata; expected saved model configuration and class names")
+        config = checkpoint.get("model_config", {})
+        args = checkpoint.get("args", {})
+        if (checkpoint.get("model_name") != "RFDETRSmall" or config.get("model_name") != "RFDETRSmall"
+                or config.get("encoder") != "dinov2_windowed_small" or config.get("resolution") != 512
+                or config.get("num_classes") != 23 or args.get("class_names") != list(CLASSES)
+                or config.get("segmentation_head") or config.get("use_grouppose_keypoints")):
+            raise ValueError("Expected RF-DETR Small, 512 pixels and the canonical full 23-class mapping; legacy Nano is incompatible")
+        self.model = cast(Any, RFDETR.from_checkpoint(str(detector_path), device=self.device, amp=False))
+        if type(self.model).__name__ != "RFDETRSmall" or list(self.model.class_names) != list(CLASSES):
+            raise ValueError("Loaded detector architecture or class mapping differs from the 23-class Small recipe")
+        self.model.model.model.load_state_dict(checkpoint["model"], strict=True)
+        del checkpoint
+        self.model.model.model.to(device=self.device, dtype=torch.float32).eval()
+        embedder = DinoV3Embedder(embedding_path, device=self.device)
+        with detector_path.open("rb") as stream:
+            digest = file_digest(stream, "sha256").hexdigest()
+        detector_config = self.model.model_config.model_dump(mode="json")
+        # Training-host paths and device do not affect the extraction recipe.
+        for key in ("pretrain_weights", "device"):
+            detector_config.pop(key, None)
+        configuration = {**embedder.configuration, "extractor_version": "small-dinov3-v1",
+            "detector_weights": "RFDETRSmall", "detector_weights_sha256": digest,
+            "detector_config": detector_config, "detector_resize_antialias": False,
+            "device": self.device, "batch_size": 1}
+        super().__init__(self._detect, embedder, classes=dict(enumerate(CLASSES)),
+                         dimension=embedder.dimension, configuration=configuration, cutoff=cutoff)
+
+    def _detect(self, image: Image.Image) -> Iterable[Detection]:
+        import torch
+        with torch.inference_mode(), torch.autocast(torch.device(self.device).type, enabled=False):
+            detections = self.model.predict(image, threshold=self.cutoff, antialias=False, include_source_image=False)
+        return [Detection(int(label), float(confidence), cast(tuple[float, float, float, float], tuple(float(v) for v in box)))
+                for label, confidence, box in zip(detections.class_id, detections.confidence, detections.xyxy)]

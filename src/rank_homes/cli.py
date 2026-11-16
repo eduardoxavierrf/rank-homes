@@ -3,12 +3,12 @@ import argparse
 from collections.abc import Callable, Sequence
 from pathlib import Path
 import sys
-from .vision import VisualExtractor, create_extractor
+from .vision import Extractor, create_extractor
 from .workflows import build_references, compare_listings
 from .ranking import matching_photo, select_listings
 
 
-def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], VisualExtractor] = create_extractor) -> int:
+def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], Extractor] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="rank-homes", description="Compare local rental photos against reference objects.")
     commands = parser.add_subparsers(dest="command", required=True)
     references = commands.add_parser("references", help="Manage reference libraries")
@@ -21,11 +21,24 @@ def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], V
     compare.add_argument("--references-images", type=Path, required=True, help="Original reference image root")
     compare.add_argument("--listings", type=Path, required=True, help="Listing image root")
     compare.add_argument("--threshold", type=float, default=0.70, help="Strict score cutoff (default: 0.70)")
+    for command in (build, compare):
+        command.add_argument("--detector", type=Path, help="Local canonical 23-class RF-DETR Small checkpoint")
+        command.add_argument("--embedding-model", type=Path, help="Local approved DINOv3 snapshot directory")
+        command.add_argument("--detector-confidence", type=float, default=0.5, help="Shared detector cutoff (default: 0.5)")
+        command.add_argument("--device", choices=("cpu", "cuda"), help="Inference device (default: CUDA if available, otherwise CPU)")
     args = parser.parse_args(argv)
     if args.command == "compare" and not 0 <= args.threshold <= 1:
         parser.error("--threshold must be between 0 and 1")
+    if not 0 <= args.detector_confidence <= 1:
+        parser.error("--detector-confidence must be between 0 and 1")
     try:
-        extractor = extractor_factory()
+        extractor = extractor_factory() if extractor_factory else create_extractor(
+            detector_path=args.detector, embedding_path=args.embedding_model,
+            cutoff=args.detector_confidence, device=args.device)
+        if extractor_factory is None:
+            from .extraction_configuration import extraction_configuration, fingerprint
+            print(f"Inference: device={extractor.configuration['device']}; float32; batch=1; "
+                  f"fingerprint={fingerprint(extraction_configuration(extractor.configuration, extractor.dimension))}", file=sys.stderr)
         if args.command == "references":
             generation = build_references(args.images, args.output, extractor)
             print(f"Published reference library: {args.output} (generation {generation})")
@@ -57,6 +70,6 @@ def main(argv: Sequence[str] | None = None, *, extractor_factory: Callable[[], V
         skipped = sum(path.is_dir() for path in args.listings.iterdir()) - len(results)
         print(f"Evaluated: {len(results)}; Selected: {len(selected)}; Below threshold: {len(results) - len(selected)}; Skipped: {skipped}")
         return 0
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ImportError) as error:
         print(f"Error during {args.command}: {error}", file=sys.stderr)
         return 1
