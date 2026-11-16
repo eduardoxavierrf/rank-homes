@@ -8,6 +8,7 @@ dependencies = [
     "rfdetr[train]==1.12.1",
     "torch==2.12.0",
     "torchvision==0.27.0",
+    "transformers==5.23.0",
 ]
 
 [build-system]
