@@ -20,7 +20,8 @@ reference files in its inventory, and extracts each byte-identical group once pe
 apartment and room. Unreadable references stop the build; unreadable candidates
 warn and apartments without usable photos are skipped. Geometry uses oriented RGB
 images, a shared detector cutoff (default 0.5), and clamped integer rectangles
-with exclusive maxima. Evidence includes source hashes and oriented dimensions.
+with exclusive maxima. Confidence equal to the cutoff is included. Evidence
+includes source hashes and oriented dimensions.
 
 Search runs entirely from staged local artifacts. Defaults are
 `artifacts/runs/rooms-expanded-small/checkpoint_best_total.pth` and

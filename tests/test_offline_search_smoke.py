@@ -46,6 +46,13 @@ class OfflineSearchSmokeTests(unittest.TestCase):
                     np.testing.assert_allclose(np.linalg.norm(first.vectors, axis=1), 1, atol=1e-5)
                     np.testing.assert_allclose(first.vectors, second.vectors, atol=1e-6, rtol=1e-6)
                     np.testing.assert_allclose(np.sum(first.vectors * first.vectors, axis=1), 1, atol=1e-5)
+                    if room == "kitchen":
+                        # The public cutoff contract includes confidence equality.
+                        boundary = max(r.confidence for r in first.regions)
+                        inclusive = create_extractor(cutoff=boundary)
+                        at_cutoff = inclusive.analyze(photo, image)
+                        self.assertTrue(any(r.confidence == boundary for r in at_cutoff.regions))
+                        del inclusive
                     for region in first.regions:
                         with image.crop(region.box) as crop:
                             self.assertGreater(min(crop.size), 0)

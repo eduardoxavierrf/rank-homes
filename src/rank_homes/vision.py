@@ -145,9 +145,10 @@ class VisualExtractor(GeometryExtractor):
         self.model = cast(Any, RFDETR.from_checkpoint(str(detector_path), device=self.device, amp=False))
         if type(self.model).__name__ != "RFDETRSmall" or list(self.model.class_names) != list(CLASSES):
             raise ValueError("Loaded detector architecture or class mapping differs from the 23-class Small recipe")
-        self.model.model.model.load_state_dict(checkpoint["model"], strict=True)
+        detector_module = self.model.model.model
+        detector_module.load_state_dict(checkpoint["model"], strict=True)
         del checkpoint
-        self.model.model.model.to(device=self.device, dtype=torch.float32).eval()
+        detector_module.to(device=self.device, dtype=torch.float32).eval()
         embedder = DinoV3Embedder(embedding_path, device=self.device)
         with detector_path.open("rb") as stream:
             digest = file_digest(stream, "sha256").hexdigest()
@@ -158,13 +159,19 @@ class VisualExtractor(GeometryExtractor):
         configuration = {**embedder.configuration, "extractor_version": "small-dinov3-v1",
             "detector_weights": "RFDETRSmall", "detector_weights_sha256": digest,
             "detector_config": detector_config, "detector_resize_antialias": False,
+            "detector_prefilter": "canonical-classes>-1", "detector_confidence_comparison": ">=",
             "device": self.device, "batch_size": 1}
         super().__init__(self._detect, embedder, classes=dict(enumerate(CLASSES)),
                          dimension=embedder.dimension, configuration=configuration, cutoff=cutoff)
 
     def _detect(self, image: Image.Image) -> Iterable[Detection]:
         import torch
+        from rfdetr import ClassThresholds
         with torch.inference_mode(), torch.autocast(torch.device(self.device).type, enabled=False):
-            detections = self.model.predict(image, threshold=self.cutoff, antialias=False, include_source_image=False)
+            # RF-DETR uses strict >. Keep its complete top-k result, including
+            # confidence zero, and apply the inclusive cutoff in GeometryExtractor.
+            # Per-class thresholds exclude the checkpoint's no-object logit slot.
+            detections = self.model.predict(image, threshold=ClassThresholds({}, default=-1.0),
+                                            antialias=False, include_source_image=False)
         return [Detection(int(label), float(confidence), cast(tuple[float, float, float, float], tuple(float(v) for v in box)))
                 for label, confidence, box in zip(detections.class_id, detections.confidence, detections.xyxy)]
