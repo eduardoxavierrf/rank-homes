@@ -66,7 +66,9 @@ def rank_listing(apartment: str, references: Analysis, candidate: Analysis) -> L
             matches.append(winner)
         else:
             matches.append(Match(room, object_class, 0.0, None, None))
-    rooms = tuple((room, math.fsum(m.score for m in matches if m.room == room) /
-                   sum(m.room == room for m in matches)) for room in sorted({m.room for m in matches}))
+    rooms = []
+    for room in sorted({m.room for m in matches}):
+        observed = [m.score for m in matches if m.room == room and m.candidate is not None]
+        rooms.append((room, math.fsum(observed) / len(observed) if observed else 0.0))
     score = math.fsum(score for _, score in rooms) / len(rooms)
-    return ListingResult(apartment, score, tuple(matches), rooms)
+    return ListingResult(apartment, score, tuple(matches), tuple(rooms))

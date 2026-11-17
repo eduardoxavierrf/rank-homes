@@ -15,6 +15,14 @@ Inputs use `<root>/<apartment>/kitchen/<photo>` or
 `<root>/<apartment>/bathroom/<photo>`. Original reference images remain required
 for comparison and evidence paths.
 
+Ranking averages only observed, comparable object classes within each reference
+room, then averages rooms equally. A room with no comparable classes scores zero.
+Observed zero-similarity matches count in the average; missing classes remain in
+the diagnostics but do not count. This can favor sparse evidence. Historical
+saved results used missing-class zero penalties and do not reflect this formula.
+The default threshold remains 0.70 and needs calibration for the new scores.
+This ranking change does not require rebuilding reference embeddings.
+
 Catalog discovery warns about photos outside the layout, keeps all eligible
 reference files in its inventory, and extracts each byte-identical group once per
 apartment and room. Unreadable references stop the build; unreadable candidates

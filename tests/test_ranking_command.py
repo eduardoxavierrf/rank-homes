@@ -143,22 +143,23 @@ class RankingCommandTests(unittest.TestCase):
                 self.photo(root, f"{apartment}/kitchen/z.png", (90, 20, 10))
                 self.photo(root, f"{apartment}/bathroom/a.png", (20, 90, 10))
                 self.photo(root, f"{apartment}/kitchen/a.png", (20, 10, 90))
-        # Missing cabinet in A-rental remains zero, but the listing still clears .5.
+        # Missing cabinet stays in diagnostics but is excluded from the average.
         (self.listings / "A-rental/kitchen/z.png").unlink()
         self.assertEqual(self.build(lambda: extractor)[0], 0)
         status, output, errors = self.compare("0.5", lambda: extractor)
         self.assertEqual(status, 0, errors)
-        self.assertLess(output.index("Listing: rental-001"), output.index("Listing: A-rental"))
+        self.assertLess(output.index("Listing: A-rental"), output.index("Listing: rental-001"))
         first, second = output.split("Listing: ")[1:]
-        for details, apartment in [(first, "rental-001"), (second, "A-rental")]:
+        for details, apartment in [(first, "A-rental"), (second, "rental-001")]:
             for expected in [str(self.listings / apartment), "Threshold: 0.5000", "Room bathroom: 0.9000",
                              "Class sink: 0.9000", "Class cabinet:", "box (1, 2, 7, 6)",
                              str(self.references / "desired/bathroom/a.png"),
                              f"Matching photo: {self.listings / apartment / 'kitchen/a.png'} (one object match)",
                              f"Matching photo: {self.listings / apartment / 'bathroom/a.png'} (one object match)"]:
                 self.assertIn(expected, details)
-        self.assertIn("Class cabinet: 0.0000", second)
-        self.assertIn("Warning: missing comparable evidence", second)
+        self.assertIn("Class cabinet: 0.0000", first)
+        self.assertIn("Warning: missing comparable evidence", first)
+        self.assertIn("Room kitchen: 0.9000", first)
         self.assertIn("Evaluated: 2; Selected: 2; Below threshold: 0; Skipped: 0", output)
         self.assertNotIn("%", output)
 

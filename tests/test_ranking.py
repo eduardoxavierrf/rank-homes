@@ -39,7 +39,7 @@ class RankingContractTests(unittest.TestCase):
         keys = [("kitchen", "sink"), ("kitchen", "cabinet"), ("bathroom", "sink"), ("bathroom", "toilet")]
         references = analysis([item(*key) for key in keys], side="reference")
         fixtures = [([.9, .8, .8, .7], .8), ([.9, .9, .2, .2], .55),
-                    ([.9, .9, None, None], .45), ([.9, None, .8, .8], .625),
+                    ([.9, .9, None, None], .45), ([.9, None, .8, .8], .85),
                     ([.8, .8, .6, .6], .70), ([.7001] * 4, .7001), ([None] * 4, 0.)]
         for values, expected in fixtures:
             with self.subTest(expected=expected):
@@ -48,6 +48,14 @@ class RankingContractTests(unittest.TestCase):
                 self.assertAlmostEqual(result.score, expected, places=7)
                 self.assertEqual(len(result.matches), 4)
                 self.assertEqual(sum(m.candidate is None for m in result.matches), values.count(None))
+
+    def test_observed_zero_counts_but_missing_class_does_not(self):
+        refs = analysis([item("kitchen", c) for c in ("sink", "wall", "cabinet")], side="reference")
+        candidate = analysis([item("kitchen", "sink", .8), item("kitchen", "wall", -1)])
+        result = rank_listing("home", refs, candidate)
+        self.assertAlmostEqual(result.score, .4, places=7)
+        self.assertEqual(dict(result.room_scores)["kitchen"], result.score)
+        self.assertEqual(sum(m.candidate is not None for m in result.matches), 2)
 
     def test_negative_pairs_keep_evidence_and_missing_pairs_do_not(self):
         refs = analysis([item("kitchen", c) for c in ("sink", "cabinet")], side="reference")

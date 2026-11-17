@@ -41,10 +41,10 @@ A rectangular region of a reference image or listing photo containing a detected
 An aggregate measure of a rental listing's visual similarity to the reference library, based on comparisons between object crops of the same class and room. It is not a probability of user interest or a measure of the home's condition.
 
 **Room similarity score**:
-A measure of a rental listing's visual similarity to the reference library for one room type, combining the object classes represented in that room's references. Missing comparable objects mean missing visual evidence, not proof that the objects are physically absent.
+A measure of a rental listing's visual similarity to the reference library for one room type, averaging only object classes with comparable visual evidence. A room without comparable evidence scores zero; missing comparable objects mean missing visual evidence, not proof that the objects are physically absent.
 
 **Object class similarity score**:
-A measure of the strongest visual match between a rental listing's object crops and reference alternatives of the same class and room. Each expected class contributes once to its room's similarity score, regardless of the number of photos or detected instances.
+A measure of the strongest visual match between a rental listing's object crops and reference alternatives of the same class and room. Each observed comparable class contributes once to its room's similarity score, regardless of the number of photos or detected instances.
 
 **Listing similarity threshold**:
 A configurable cutoff applied to the listing similarity score to select rental listings considered sufficiently similar to the reference library.
