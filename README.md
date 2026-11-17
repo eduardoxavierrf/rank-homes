@@ -1,5 +1,43 @@
 # Rank Homes
 
+Find rental listings worth opening first, based on kitchens and bathrooms you
+actually like.
+
+## Why I built this
+
+I was spending hours browsing rental listings, scrolling through photos, only to
+reach a kitchen or bathroom that made me rule out the property. These two rooms
+were often the deciding factor, but I kept discovering them too late.
+
+I already had photos of kitchens and bathrooms I liked. Could I use those images
+to decide which listings to open first?
+
+Rank Homes is my experiment to answer that question. It compares visual details
+in reference images with those in rental listings, then ranks properties by
+similarity. Each result includes the matching listing photo, so I can go straight
+to the kitchen or bathroom behind the match.
+
+## How it works
+
+The comparison focuses on individual objects and surfaces, such as sinks, walls,
+and windows, rather than treating the entire room as a single image.
+
+1. **Prepare training data from ADE20K.** Convert its room images and object
+   annotations into bounding boxes for the kitchen and bathroom objects of interest.
+2. **Detect and crop objects with RF-DETR Small.** Fine-tune the detector on that
+   data, then use it to locate target objects in reference images and listing photos.
+3. **Create embeddings with DINOv3.** Use PyTorch to turn each object crop into a
+   vector representing its visual features.
+4. **Rank listings by visual similarity.** Use NumPy to calculate cosine similarity
+   between embeddings of the same object class in the same room type: sink with
+   sink, wall with wall. Aggregate those matches into a listing similarity score
+   and show the photos supporting the result.
+
+Reference embeddings are saved in a reusable local library. Listing photos are
+processed when a comparison runs.
+
+## Getting started
+
 Install with `uv sync --locked`. Preparation, training and prediction scripts
 remain in `scripts/` and run with `uv run python scripts/<script>.py`.
 
@@ -14,6 +52,40 @@ rank-homes compare --references artifacts/references --references-images data/re
 Inputs use `<root>/<apartment>/kitchen/<photo>` or
 `<root>/<apartment>/bathroom/<photo>`. Original reference images remain required
 for comparison and evidence paths.
+
+```text
+data/
+  references/
+    reference-home/
+      kitchen/01.jpg
+      bathroom/01.jpg
+  candidates/
+    rental-listing/
+      kitchen/01.jpg
+      bathroom/01.jpg
+```
+
+Stage the model artifacts described below before building the reference library.
+Run `references build` to prepare your references, then `compare` to rank the local
+candidate listings against them.
+
+## Finding new listings
+
+Ranking photos solved only part of my search: I still needed fresh listings.
+I created a companion Codex skill that searches QuintoAndar in a chosen
+neighborhood in Rio de Janeiro, collects photos explicitly labeled as kitchens
+or bathrooms, avoids previously collected listings, downloads the images, and
+runs the local ranking.
+
+In my own setup, I scheduled this workflow to run daily so the results would be
+ready when I wanted to look. Collection and scheduling are part of that companion
+workflow; the CLI documented here compares photos already stored locally.
+
+## Ranking behavior and limitations
+
+The score measures visual similarity to the reference library. It is not a
+probability that I will like a home, an assessment of its condition, or a substitute
+for checking the listing and visiting the property.
 
 Ranking averages only observed, comparable object classes within each reference
 room, then averages rooms equally. A room with no comparable classes scores zero.
@@ -30,6 +102,8 @@ warn and apartments without usable photos are skipped. Geometry uses oriented RG
 images, a shared detector cutoff (default 0.5), and clamped integer rectangles
 with exclusive maxima. Confidence equal to the cutoff is included. Evidence
 includes source hashes and oriented dimensions.
+
+## Local models and inference
 
 Search runs entirely from staged local artifacts. Defaults are
 `artifacts/runs/rooms-expanded-small/checkpoint_best_total.pth` and
@@ -54,6 +128,8 @@ The [real offline search evidence](evidence/offline-search/README.md) covers bot
 rooms, command reuse and rejection of stale references. Detection quality remains
 a limitation; successful execution does not establish retrieval accuracy.
 
+## Reference library lifecycle
+
 Reference builds hold an OS-managed writer lock for the complete command. Each
 build writes a new generation under `generations/`, reloads and validates its
 manifest, float32 NumPy matrix and original-size RGB PNG crops, then atomically
@@ -69,6 +145,8 @@ root is compatible. Inventory changes, corruption, unknown formats or extraction
 configuration changes require an explicit rebuild. Changing `--threshold` does
 not require a rebuild.
 
+### Extraction configuration
+
 Extractor adapters must supply effective configuration: `extractor_version`,
 `detector_weights`, `detector_weights_sha256`, `classes`, `detector_cutoff`,
 `geometry`, `embedding_weights`, `embedding_weights_sha256`, `embedding_revision`,
@@ -79,6 +157,8 @@ SHA-256 fingerprint includes these settings and exact installed RF-DETR, Torch,
 Torchvision, Transformers, Pillow and NumPy versions, without importing models.
 Missing distributions are recorded explicitly for model-free adapters. Listing
 threshold, presentation, device and hardware are excluded from extraction identity.
+
+## Development checks
 
 Run checks with `uv run pyright` and `uv run python -m unittest discover -s tests`.
 The real search smoke is opt-in: set `RANK_HOMES_REAL_SMOKE=1` and run
