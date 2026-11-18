@@ -3,6 +3,8 @@
 Find rental listings worth opening first, based on kitchens and bathrooms you
 actually like.
 
+![Rank Homes demo](docs/assets/demo.gif)
+
 ## Why I built this
 
 I was spending hours browsing rental listings, scrolling through photos, only to

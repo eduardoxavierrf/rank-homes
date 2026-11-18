@@ -25,6 +25,11 @@ dist/
 
 # skills
 /docs/
+!/docs/
+/docs/*
+!/docs/assets/
+/docs/assets/*
+!/docs/assets/demo.gif
 /.scratch/
 
 # Private local validation evidence
